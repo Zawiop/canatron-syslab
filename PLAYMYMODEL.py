@@ -13,7 +13,7 @@ def mask_fn(env) -> np.ndarray:
     return mask
 
 env = ActionMasker(gym.make("catanatron/Catanatron-v0"), mask_fn)
-model = MaskablePPO.load("catan_maskableppo")
+model = MaskablePPO.load("MYMODEL")
 
 obs, info = env.reset()
 while True:
