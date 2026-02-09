@@ -28,6 +28,20 @@ def vp_reward(game, p0_color):
         return 1.0
     else:
         return -1.0
+    
+def vp_progress_reward(game, p0_color):
+    
+    p0 = game.state.players[p0_color]
+
+    
+    vp = float(getattr(p0, "victory_points", 0))
+
+    winning_color = game.winning_color()
+    if winning_color is not None:
+        return 10.0 if winning_color == p0_color else -10.0
+
+    return 0.5 * vp
+
 
 env = gym.make(
     "catanatron/Catanatron-v0",
@@ -41,8 +55,23 @@ env = ActionMasker(env, mask_fn)
 
 model = MaskablePPO("MlpPolicy", env, verbose=1)
 
-model.learn(total_timesteps=100_000)
+import time
+
+hours = 6
+TRAIN_SECONDS = 60 * 60 * hours
+SAVE_EVERY = 60 * 10    
+
+start = time.time()
+last_save = start
+
+while time.time() - start < TRAIN_SECONDS:
+    model.learn(10_000, reset_num_timesteps=False)
+
+    if time.time() - last_save > SAVE_EVERY:
+        model.save("MYMODEL_autosave")
+        last_save = time.time()
+
 model.save("MYMODEL")
-print(model.policy)
+
 
 
