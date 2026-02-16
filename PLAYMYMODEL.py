@@ -15,7 +15,7 @@ class PPOPlayer(Player):
     def __init__(self, color, model_path=None):
         super().__init__(color)
         # Allow overriding model path via env var or param
-        model_path = model_path or os.getenv("CATAN_PPO_MODEL", "MYMODEL.zip")
+        model_path = model_path or os.getenv("CATAN_PPO_MODEL", "checkpoints/catan_ppo_mask_1000000_steps")
         self.model = MaskablePPO.load(model_path)
 
     def decide(self, game, playable_actions):
