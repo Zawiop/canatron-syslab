@@ -3,7 +3,6 @@ import os
 import numpy as np
 
 from catanatron import Player
-from catanatron.cli import register_cli_player
 
 from catanatron.features import create_sample, get_feature_ordering
 from catanatron.gym.envs.catanatron_env import to_action_space  # path may vary by version
@@ -43,4 +42,3 @@ class PPOPlayer(Player):
 
         return idx_to_action.get(int(action_idx), playable_actions[0])
 
-register_cli_player("PPO", PPOPlayer)

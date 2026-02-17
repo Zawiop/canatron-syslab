@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Catan AI Arena</title>
+  <link rel="stylesheet" href="websitefrontendcss.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="navbar">
+    <h1>Catan AI Arena</h1>
+    <nav>
+      <a href="#">Play</a>
+      <a href="#">Upload Bot</a>
+      <a href="#">About</a>
+    </nav>
+  </header>
+
+  <!-- Main Layout -->
+  <main class="container">
+
+    <!-- Left Panel -->
+    <section class="panel left">
+      <h2>Game Setup</h2>
+
+      <label class="label">Select Opponent</label>
+      <select class="select">
+        <option>Built-in Random Bot</option>
+        <option>Heuristic Bot</option>
+        <option>My Uploaded Bot</option>
+      </select>
+
+      <label class="label">Upload Bot (.zip)</label>
+      <input type="file" class="file-input" accept=".zip" />
+
+      <button id="startGameBtn" class="primary-btn">Start Game</button>
+
+      <div class="status">
+        <h3>Status</h3>
+        <p>Waiting to start game...</p>
+      </div>
+    </section>
+
+    <!-- Center Board -->
+    <section class="panel center">
+      <h2>Game Board</h2>
+
+      <div class="board-placeholder">
+        <p>Catan Board Render Here</p>
+        <span>(Catanatron GUI will be mounted here)</span>
+      </div>
+    </section>
+
+    <!-- Right Panel -->
+    <section class="panel right">
+      <h2>Game Log</h2>
+
+      <div class="log">
+        <p>Dice rolled: 8</p>
+        <p>Bot built a road</p>
+        <p>You built a settlement</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p>hahaha wow</p>
+  </footer>
+  <script src="websitefrontendjs.js"></script>
+</body>
+</html>
