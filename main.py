@@ -44,3 +44,7 @@ async def get_state():
 @app.post("/human-move")
 async def human_move(action_index: int):
     return manager.apply_human_move(action_index)
+
+@app.post("/launch-gui")
+async def launch_gui():
+    return manager.launch_gui()
