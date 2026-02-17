@@ -27,3 +27,4 @@
 #     "CO": MCTSScoreCollector,
 #     "COP": MCTSPredictor,
 # }
+from . import playmymodel  # noqa: F401
