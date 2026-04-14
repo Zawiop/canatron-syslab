@@ -26,14 +26,21 @@ def mask_fn(env) -> np.ndarray:
     return mask
 
 
-# -------------------------
-# REWARD
-# -------------------------
+
 def vp_reward(game, p0_color):
     winning_color = game.winning_color()
     if winning_color is None:
         return 0.0
     return 1.0 if winning_color == p0_color else -1.0
+
+def vp_reward2(game, p0_color):
+    winning_color = game.winning_color()
+    if winning_color is None:
+        return 0.0
+    return 1.0 if winning_color == p0_color else -1.0
+
+import math
+
 
 
 # -------------------------
@@ -51,9 +58,7 @@ def make_env():
     return env
 
 
-# -------------------------
-# REQUIRED FOR WINDOWS
-# -------------------------
+
 if __name__ == "__main__":
 
     print("CUDA available:", torch.cuda.is_available())
