@@ -97,10 +97,13 @@ class RewardIteration2:
 
 import math
 
-class BetterVPReward:
+class StrongLongTermReward:
     def __init__(self):
-        self.prev_vp = None
         self.last_game_id = None
+        self.prev_actual_vp = None
+        self.prev_public_vp = None
+        self.prev_has_road = None
+        self.prev_has_army = None
 
     def _safe_get(self, obj, key, default=0):
         if isinstance(obj, dict):
@@ -117,56 +120,92 @@ class BetterVPReward:
                     return v
         return None
 
-    def _get_vp(self, game, p0_color):
+    def _get_actual_vp(self, player):
+        return float(
+            self._safe_get(
+                player,
+                "actual_victory_points",
+                self._safe_get(
+                    player,
+                    "victory_points",
+                    self._safe_get(player, "public_victory_points", 0),
+                ),
+            )
+        )
+
+    def _get_public_vp(self, player):
+        return float(self._safe_get(player, "public_victory_points", 0))
+
+    def _get_has_road(self, player):
+        return int(self._safe_get(player, "has_road", self._safe_get(player, "has_longest_road", 0)))
+
+    def _get_has_army(self, player):
+        return int(self._safe_get(player, "has_army", self._safe_get(player, "has_largest_army", 0)))
+
+    def __call__(self, game, p0_color):
+        game_id = id(game)
+
         player = self._player_state(game, p0_color)
         if player is None:
             return 0.0
 
-        # Prefer actual victory points if available
-        vp = self._safe_get(
-            player,
-            "actual_victory_points",
-            self._safe_get(
-                player,
-                "victory_points",
-                self._safe_get(player, "public_victory_points", 0),
-            ),
-        )
-        return float(vp)
+        actual_vp = self._get_actual_vp(player)
+        public_vp = self._get_public_vp(player)
+        has_road = self._get_has_road(player)
+        has_army = self._get_has_army(player)
 
-    def __call__(self, game, p0_color):
-        # Detect new episode/game and reset internal state
-        game_id = id(game)
+        # reset state at start of each new game
         if self.last_game_id != game_id:
             self.last_game_id = game_id
-            self.prev_vp = self._get_vp(game, p0_color)
+            self.prev_actual_vp = actual_vp
+            self.prev_public_vp = public_vp
+            self.prev_has_road = has_road
+            self.prev_has_army = has_army
             return 0.0
 
         winner = game.winning_color()
-        vp = self._get_vp(game, p0_color)
 
-        # Small shaping on VP progress only
         reward = 0.0
-        reward += 1.0 * (vp - self.prev_vp)
 
-        # Tiny step penalty to encourage faster wins
+        # --- tiny step penalty to prefer faster wins ---
         reward -= 0.01
 
-        # Strong terminal reward
+        # --- main shaping: actual VP progress ---
+        reward += 1.5 * (actual_vp - self.prev_actual_vp)
+
+        # --- very small shaping for public board progress only ---
+        # this helps earlier learning but is weaker than actual VP
+        reward += 0.3 * (public_vp - self.prev_public_vp)
+
+        # --- small one-time bonus for grabbing longest road / largest army ---
+        if has_road > self.prev_has_road:
+            reward += 0.75
+        elif has_road < self.prev_has_road:
+            reward -= 0.75
+
+        if has_army > self.prev_has_army:
+            reward += 0.75
+        elif has_army < self.prev_has_army:
+            reward -= 0.75
+
+        # --- terminal reward dominates everything ---
         if winner is not None:
             if str(winner) == str(p0_color):
-                reward += 5.0
+                reward += 20.0
             else:
-                reward -= 5.0
+                reward -= 20.0
 
-        self.prev_vp = vp
+        self.prev_actual_vp = actual_vp
+        self.prev_public_vp = public_vp
+        self.prev_has_road = has_road
+        self.prev_has_army = has_army
+
         return float(reward)
-
 
 # -------------------------
 # SINGLE ENV CREATOR
 # -------------------------
-reward = BetterVPReward()
+reward = StrongLongTermReward()
 def make_env():
     env = gym.make(
         "catanatron/Catanatron-v0",
