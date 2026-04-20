@@ -201,11 +201,61 @@ class StrongLongTermReward:
         self.prev_has_army = has_army
 
         return float(reward)
+    
+class FinalReward:
+    def __init__(self):
+        self.prev_vp = None
+        self.last_game_id = None
+
+    def _safe_get(self, obj, key, default=0):
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    def _player_state(self, game, p0_color):
+        ps = game.state.player_state
+        if isinstance(ps, dict):
+            if p0_color in ps:
+                return ps[p0_color]
+            for k, v in ps.items():
+                if str(k) == str(p0_color):
+                    return v
+        return None
+
+    def _get_vp(self, game, p0_color):
+        player = self._player_state(game, p0_color)
+        if player is None:
+            return 0.0
+        return float(
+            self._safe_get(
+                player,
+                "actual_victory_points",
+                self._safe_get(player, "victory_points", 0),
+            )
+        )
+
+    def __call__(self, game, p0_color):
+        game_id = id(game)
+        vp = self._get_vp(game, p0_color)
+
+        if self.last_game_id != game_id:
+            self.last_game_id = game_id
+            self.prev_vp = vp
+            return 0.0
+
+        reward = 0.2 * (vp - self.prev_vp)
+
+        winner = game.winning_color()
+        if winner is not None:
+            reward += 10.0 if str(winner) == str(p0_color) else -10.0
+
+        self.prev_vp = vp
+        return float(reward)
 
 # -------------------------
 # SINGLE ENV CREATOR
 # -------------------------
-reward = StrongLongTermReward()
+reward = FinalReward()
 def make_env():
     env = gym.make(
         "catanatron/Catanatron-v0",
