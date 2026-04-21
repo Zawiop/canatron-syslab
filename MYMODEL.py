@@ -285,7 +285,7 @@ if __name__ == "__main__":
     model = MaskablePPO(
         "MlpPolicy",
         venv,
-        device=device,      # GPU
+        device="cuda",      # GPU
         verbose=1,
         learning_rate=1e-4,
         ent_coef=0.05,
@@ -299,7 +299,7 @@ if __name__ == "__main__":
         save_path="./checkpoints/",
         name_prefix="catan",
     )
-    hours = 4   
+    hours = 1
     timesteps = 5000000*hours
     try:
         model.learn(total_timesteps=timesteps, callback=checkpoint_cb)
