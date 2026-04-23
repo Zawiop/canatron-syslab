@@ -255,8 +255,8 @@ class FinalReward:
 # -------------------------
 # SINGLE ENV CREATOR
 # -------------------------
-reward = FinalReward()
 def make_env():
+    reward = RewardIteration2()
     env = gym.make(
         "catanatron/Catanatron-v0",
         config={
@@ -281,18 +281,29 @@ if __name__ == "__main__":
     venv = SubprocVecEnv([make_env for _ in range(N_ENVS)])
 
     venv = VecNormalize(venv, norm_obs=True, norm_reward=True, clip_obs=10.0)
+    CONTINUE_FROM = "SecondModel\MYMODEL_final5000000.zip"   # set to None to start fresh
 
-    model = MaskablePPO(
-        "MlpPolicy",
-        venv,
-        device="cuda",      # GPU
-        verbose=1,
-        learning_rate=1e-4,
-        ent_coef=0.05,
-        n_steps=1024,
-        batch_size=512,
-        gamma=0.99,
-    )
+    if CONTINUE_FROM:
+        print("Loading existing model from:", CONTINUE_FROM)
+        model = MaskablePPO.load(
+            CONTINUE_FROM,
+            env=venv,
+            device=device,
+        )
+        model.verbose = 1
+    else:
+        print("Starting new model")
+        model = MaskablePPO(
+            "MlpPolicy",
+            venv,
+            device=device,
+            verbose=1,
+            learning_rate=1e-4,
+            ent_coef=0.05,
+            n_steps=1024,
+            batch_size=512,
+            gamma=0.99,
+        )
 
     checkpoint_cb = CheckpointCallback(
         save_freq=1000000,
