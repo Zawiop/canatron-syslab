@@ -20,11 +20,16 @@ def mask_fn(env) -> np.ndarray:
     valid = valid[(valid >= 0) & (valid < n)]
 
     if valid.size == 0:
-        mask[0] = True
-    else:
-        mask[valid] = True
-    return mask
+        raise RuntimeError("Zero valid actions")
 
+    mask[valid] = True
+
+    # 🔧 FIX: avoid single-action degeneracy
+    if valid.size == 1:
+        alt = (valid[0] + 1) % n
+        mask[alt] = True
+
+    return mask
 
 
 def vp_reward(game, p0_color):
@@ -277,11 +282,10 @@ if __name__ == "__main__":
 
     N_ENVS =8
 
-    # IMPORTANT: do NOT call make_env()
     venv = SubprocVecEnv([make_env for _ in range(N_ENVS)])
 
     venv = VecNormalize(venv, norm_obs=True, norm_reward=True, clip_obs=10.0)
-    CONTINUE_FROM = "SecondModel\MYMODEL_final5000000.zip"   # set to None to start fresh
+    CONTINUE_FROM = ""   # set to None to start fresh
 
     if CONTINUE_FROM:
         print("Loading existing model from:", CONTINUE_FROM)
@@ -299,7 +303,7 @@ if __name__ == "__main__":
             device=device,
             verbose=1,
             learning_rate=1e-4,
-            ent_coef=0.05,
+            ent_coef=0.005,
             n_steps=1024,
             batch_size=512,
             gamma=0.99,
@@ -310,7 +314,7 @@ if __name__ == "__main__":
         save_path="./checkpoints/",
         name_prefix="catan",
     )
-    hours = 8
+    hours = 4
     timesteps = 5000000*hours
     try:
         model.learn(total_timesteps=timesteps, callback=checkpoint_cb)
