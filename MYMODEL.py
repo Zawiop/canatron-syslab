@@ -285,7 +285,7 @@ if __name__ == "__main__":
     venv = SubprocVecEnv([make_env for _ in range(N_ENVS)])
 
     venv = VecNormalize(venv, norm_obs=True, norm_reward=True, clip_obs=10.0)
-    CONTINUE_FROM = ""   # set to None to start fresh
+    CONTINUE_FROM = "SecondModel/MYMODEL_final5000000.zip"   # set to None to start fresh
 
     if CONTINUE_FROM:
         print("Loading existing model from:", CONTINUE_FROM)
@@ -303,7 +303,7 @@ if __name__ == "__main__":
             device=device,
             verbose=1,
             learning_rate=1e-4,
-            ent_coef=0.005,
+            ent_coef=0.05,
             n_steps=1024,
             batch_size=512,
             gamma=0.99,
@@ -314,7 +314,7 @@ if __name__ == "__main__":
         save_path="./checkpoints/",
         name_prefix="catan",
     )
-    hours = 4
+    hours = 8
     timesteps = 5000000*hours
     try:
         model.learn(total_timesteps=timesteps, callback=checkpoint_cb)
