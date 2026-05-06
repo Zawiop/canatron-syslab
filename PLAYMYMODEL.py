@@ -1,48 +1,87 @@
 # ppo_player.py
 import os
+import pickle
 import numpy as np
 
 from catanatron import Player
 from catanatron.cli import register_cli_player
-
 from catanatron.features import create_sample, get_feature_ordering
-from catanatron.gym.envs.catanatron_env import to_action_space  # path may vary by version
+from catanatron.gym.envs.catanatron_env import to_action_space
+
 from sb3_contrib.ppo_mask import MaskablePPO
 
+
 FEATURES = get_feature_ordering(num_players=2)
+
 
 class PPOPlayer(Player):
     def __init__(self, color, model_path=None):
         super().__init__(color)
-        # Allow overriding model path via env var or param
-        model_path = model_path or os.getenv("CATAN_PPO_MODEL", "MYMODEL_final20000000")
+
+        model_path = model_path or os.getenv(
+            "CATAN_PPO_MODEL",
+            "MYMODEL_final40000000"
+        )
+
+        vecnorm_path = os.getenv("CATAN_VECNORM", "vec_normalize.pkl")
+
         self.model = MaskablePPO.load(model_path)
 
+        with open(vecnorm_path, "rb") as f:
+            self.vecnorm = pickle.load(f)
+
+        self.vecnorm.training = False
+        self.vecnorm.norm_reward = False
+
     def decide(self, game, playable_actions):
-        # 1) Encode observation exactly like training (vector rep)
         sample = create_sample(game, self.color)
         obs = np.array([float(sample[f]) for f in FEATURES], dtype=np.float32)
 
-        # 2) Build mask + mapping from action index -> Action object
+        obs = obs.reshape(1, -1)
+        obs = self.vecnorm.normalize_obs(obs)
+
         n = int(self.model.action_space.n)
         mask = np.zeros(n, dtype=bool)
         idx_to_action = {}
 
         for a in playable_actions:
-            idx = to_action_space(a)
-            if 0 <= idx < n:
-                mask[idx] = True
-                idx_to_action[idx] = a
+            try:
+                idx = to_action_space(a)
+                if 0 <= idx < n:
+                    mask[idx] = True
+                    idx_to_action[idx] = a
+            except Exception:
+                pass
 
-        # Safety fallback: if something is off, pick any legal action
         if not idx_to_action:
             return playable_actions[0]
 
-        # 3) Ask PPO for an action (deterministic for “best move” play)
-        action_idx, _ = self.model.predict(obs, action_masks=mask, deterministic=True)
+        # If there is only one legal move, no need to ask the model.
+        # This avoids MaskablePPO numerical issues with single-action masks.
+        if len(idx_to_action) == 1:
+            return next(iter(idx_to_action.values()))
 
-        return idx_to_action.get(int(action_idx), playable_actions[0])
+        mask = mask.reshape(1, -1)
+
+        try:
+            action_idx, _ = self.model.predict(
+                obs,
+                action_masks=mask,
+                deterministic=True
+            )
+        except ValueError as e:
+            print("PPO predict crashed.")
+            print("obs shape:", obs.shape)
+            print("obs min/max:", obs.min(), obs.max())
+            print("mask shape:", mask.shape)
+            print("valid count:", mask.sum())
+            print("valid indexes:", np.where(mask[0])[0])
+            print(e)
+            return playable_actions[0]
+
+        action_idx = int(np.asarray(action_idx).item())
+
+        return idx_to_action.get(action_idx, playable_actions[0])
 
 
-
-register_cli_player("PPO",PPOPlayer)
+register_cli_player("PPO", PPOPlayer)

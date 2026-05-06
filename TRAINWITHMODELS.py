@@ -8,6 +8,10 @@ from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
+from catanatron.models.player import Color
+from catanatron.players.value import ValueFunctionPlayer
+from catanatron.models.player import RandomPlayer
+
 
 # -------------------------
 # MASK
@@ -23,12 +27,6 @@ def mask_fn(env) -> np.ndarray:
         raise RuntimeError("Zero valid actions")
 
     mask[valid] = True
-
-    # 🔧 FIX: avoid single-action degeneracy
-    if valid.size == 1:
-        alt = (valid[0] + 1) % n
-        mask[alt] = True
-
     return mask
 
 
@@ -102,13 +100,15 @@ class RewardIteration2:
 
 import math
 
-class StrongLongTermReward:
+class ExpansionReward:
     def __init__(self):
         self.last_game_id = None
-        self.prev_actual_vp = None
-        self.prev_public_vp = None
-        self.prev_has_road = None
-        self.prev_has_army = None
+        self.prev_vp = None
+        self.prev_settlements = None
+        self.prev_cities = None
+        self.prev_roads = None
+        self.prev_resources = None
+        self.prev_dev_cards = None
 
     def _safe_get(self, obj, key, default=0):
         if isinstance(obj, dict):
@@ -125,150 +125,150 @@ class StrongLongTermReward:
                     return v
         return None
 
-    def _get_actual_vp(self, player):
-        return float(
+    def _count_structures(self, game, p0_color):
+        settlements = 0
+        cities = 0
+
+        for _, b in game.state.board.buildings.items():
+            color = self._safe_get(b, "color", None)
+            btype = str(
+                self._safe_get(
+                    b,
+                    "building_type",
+                    self._safe_get(b, "type", "")
+                )
+            ).lower()
+
+            if str(color) == str(p0_color):
+                if btype.endswith("city"):
+                    cities += 1
+                else:
+                    settlements += 1
+
+        return settlements, cities
+
+    def _count_roads(self, game, p0_color):
+        roads = 0
+
+        road_data = getattr(game.state.board, "roads", {})
+
+        if isinstance(road_data, dict):
+            iterable = road_data.values()
+        else:
+            iterable = road_data
+
+        for r in iterable:
+            color = self._safe_get(r, "color", None)
+            if str(color) == str(p0_color):
+                roads += 1
+
+        return roads
+
+    def _count_resources(self, player):
+        resources = self._safe_get(player, "resources", {})
+
+        if isinstance(resources, dict):
+            return sum(resources.values())
+
+        try:
+            return sum(resources)
+        except Exception:
+            return 0
+
+    def _count_dev_cards(self, player):
+        dev_cards = self._safe_get(
+            player,
+            "development_cards",
+            self._safe_get(player, "dev_cards", {})
+        )
+
+        if isinstance(dev_cards, dict):
+            return sum(dev_cards.values())
+
+        try:
+            return len(dev_cards)
+        except Exception:
+            return 0
+
+    def __call__(self, game, p0_color):
+        game_id = id(game)
+
+        player = self._player_state(game, p0_color)
+        if player is None:
+            return 0.0
+
+        vp = float(
             self._safe_get(
                 player,
-                "actual_victory_points",
+                "victory_points",
                 self._safe_get(
                     player,
-                    "victory_points",
+                    "actual_victory_points",
                     self._safe_get(player, "public_victory_points", 0),
                 ),
             )
         )
 
-    def _get_public_vp(self, player):
-        return float(self._safe_get(player, "public_victory_points", 0))
-
-    def _get_has_road(self, player):
-        return int(self._safe_get(player, "has_road", self._safe_get(player, "has_longest_road", 0)))
-
-    def _get_has_army(self, player):
-        return int(self._safe_get(player, "has_army", self._safe_get(player, "has_largest_army", 0)))
-
-    def __call__(self, game, p0_color):
-        game_id = id(game)
-
-        player = self._player_state(game, p0_color)
-        if player is None:
-            return 0.0
-
-        actual_vp = self._get_actual_vp(player)
-        public_vp = self._get_public_vp(player)
-        has_road = self._get_has_road(player)
-        has_army = self._get_has_army(player)
-
-        # reset state at start of each new game
-        if self.last_game_id != game_id:
-            self.last_game_id = game_id
-            self.prev_actual_vp = actual_vp
-            self.prev_public_vp = public_vp
-            self.prev_has_road = has_road
-            self.prev_has_army = has_army
-            return 0.0
-
-        winner = game.winning_color()
-
-        reward = 0.0
-
-        # --- tiny step penalty to prefer faster wins ---
-        reward -= 0.01
-
-        # --- main shaping: actual VP progress ---
-        reward += 1.5 * (actual_vp - self.prev_actual_vp)
-
-        # --- very small shaping for public board progress only ---
-        # this helps earlier learning but is weaker than actual VP
-        reward += 0.3 * (public_vp - self.prev_public_vp)
-
-        # --- small one-time bonus for grabbing longest road / largest army ---
-        if has_road > self.prev_has_road:
-            reward += 0.75
-        elif has_road < self.prev_has_road:
-            reward -= 0.75
-
-        if has_army > self.prev_has_army:
-            reward += 0.75
-        elif has_army < self.prev_has_army:
-            reward -= 0.75
-
-        # --- terminal reward dominates everything ---
-        if winner is not None:
-            if str(winner) == str(p0_color):
-                reward += 20.0
-            else:
-                reward -= 20.0
-
-        self.prev_actual_vp = actual_vp
-        self.prev_public_vp = public_vp
-        self.prev_has_road = has_road
-        self.prev_has_army = has_army
-
-        return float(reward)
-    
-class FinalReward:
-    def __init__(self):
-        self.prev_vp = None
-        self.last_game_id = None
-
-    def _safe_get(self, obj, key, default=0):
-        if isinstance(obj, dict):
-            return obj.get(key, default)
-        return getattr(obj, key, default)
-
-    def _player_state(self, game, p0_color):
-        ps = game.state.player_state
-        if isinstance(ps, dict):
-            if p0_color in ps:
-                return ps[p0_color]
-            for k, v in ps.items():
-                if str(k) == str(p0_color):
-                    return v
-        return None
-
-    def _get_vp(self, game, p0_color):
-        player = self._player_state(game, p0_color)
-        if player is None:
-            return 0.0
-        return float(
-            self._safe_get(
-                player,
-                "actual_victory_points",
-                self._safe_get(player, "victory_points", 0),
-            )
-        )
-
-    def __call__(self, game, p0_color):
-        game_id = id(game)
-        vp = self._get_vp(game, p0_color)
+        settlements, cities = self._count_structures(game, p0_color)
+        roads = self._count_roads(game, p0_color)
+        resources = self._count_resources(player)
+        dev_cards = self._count_dev_cards(player)
 
         if self.last_game_id != game_id:
             self.last_game_id = game_id
             self.prev_vp = vp
+            self.prev_settlements = settlements
+            self.prev_cities = cities
+            self.prev_roads = roads
+            self.prev_resources = resources
+            self.prev_dev_cards = dev_cards
             return 0.0
 
-        reward = 0.2 * (vp - self.prev_vp)
+        reward = 0.0
+
+        # Main progress
+        reward += 2.5 * (vp - self.prev_vp)
+        reward += 1.5 * (settlements - self.prev_settlements)
+        reward += 2.5 * (cities - self.prev_cities)
+
+        # Expansion / development shaping
+        reward += 0.25 * (roads - self.prev_roads)
+        reward += 0.15 * (resources - self.prev_resources)
+        reward += 0.25 * (dev_cards - self.prev_dev_cards)
+
+        # Prefer faster wins, but keep penalty tiny
+        reward -= 0.005
 
         winner = game.winning_color()
         if winner is not None:
-            reward += 10.0 if str(winner) == str(p0_color) else -10.0
+            reward += 20.0 if str(winner) == str(p0_color) else -20.0
 
         self.prev_vp = vp
+        self.prev_settlements = settlements
+        self.prev_cities = cities
+        self.prev_roads = roads
+        self.prev_resources = resources
+        self.prev_dev_cards = dev_cards
+
         return float(reward)
 
 # -------------------------
 # SINGLE ENV CREATOR
 # -------------------------
 def make_env():
-    reward = RewardIteration2()
+    reward = ExpansionReward()
+
     env = gym.make(
         "catanatron/Catanatron-v0",
         config={
             "reward_function": reward,
             "invalid_action_reward": -1.0,
+            "enemies": [
+                ValueFunctionPlayer(Color.RED),
+            ],
         },
     )
+
     env = ActionMasker(env, mask_fn)
     return env
 
@@ -281,12 +281,20 @@ if __name__ == "__main__":
     print("Using device:", device)
 
     N_ENVS =8
-
+    
+    CONTINUE_FROM = "FINALMODEL/MYMODEL_final40000000.zip"
+    CONTINUE_VECNORM = "FINALMODEL/vec_normalize.pkl"
+    
     venv = SubprocVecEnv([make_env for _ in range(N_ENVS)])
-
-    venv = VecNormalize(venv, norm_obs=True, norm_reward=True, clip_obs=10.0)
-    CONTINUE_FROM = "SecondModel/MYMODEL_final5000000.zip"   # set to None to start fresh
-
+    
+    if CONTINUE_FROM and CONTINUE_VECNORM:
+        print("Loading VecNormalize from:", CONTINUE_VECNORM)
+        venv = VecNormalize.load(CONTINUE_VECNORM, venv)
+        venv.training = True
+        venv.norm_reward = True
+    else:
+        venv = VecNormalize(venv, norm_obs=True, norm_reward=True, clip_obs=10.0)
+        
     if CONTINUE_FROM:
         print("Loading existing model from:", CONTINUE_FROM)
         model = MaskablePPO.load(
@@ -319,7 +327,7 @@ if __name__ == "__main__":
     try:
         model.learn(total_timesteps=timesteps, callback=checkpoint_cb)
     finally:
-        model.save(f"MYMODEL_final{timesteps}")
-        venv.save("vec_normalize.pkl")
+        model.save(f"VALUE_TRAINED_MODEL_final{timesteps}")
+        venv.save("value_trained_vec_normalize.pkl")
         print("Training finished + saved.")
  
